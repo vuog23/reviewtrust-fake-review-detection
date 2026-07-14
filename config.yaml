@@ -1,0 +1,130 @@
+seed: 42
+output_dir: models
+cache_dir: cache
+
+data:
+  root_dir: datasets
+  processed_dir: datasets/preprocessed
+  preprocess: true
+  max_chars: 12000
+
+models:
+  distilbert:
+    model_name: distilbert/distilbert-base-uncased
+    max_length: 512
+    batch_size: 16
+    learning_rate: 3.0e-5
+    weight_decay: 0.01
+    drop_path_rate: 0.1
+    dropout: 0.1
+    epochs: 15
+
+  modernbert:
+    model_name: answerdotai/ModernBERT-base
+    max_length: 1024
+    batch_size: 4
+    learning_rate: 3.0e-5
+    weight_decay: 0.01
+    drop_path_rate: 0.1
+    dropout: 0.1
+    epochs: 15
+
+  bert:
+    model_name: google-bert/bert-base-uncased
+    max_length: 512
+    batch_size: 16
+    learning_rate: 3.0e-5
+    weight_decay: 0.01
+    drop_path_rate: 0.1
+    dropout: 0.1
+    epochs: 15
+
+  roberta:
+    model_name: FacebookAI/roberta-base
+    max_length: 512
+    batch_size: 16
+    learning_rate: 3.0e-5
+    weight_decay: 0.01
+    drop_path_rate: 0.1
+    dropout: 0.1
+    epochs: 15
+
+training:
+  losses: [ce, label_smoothing, focal]
+  num_labels: 2
+  label_smoothing_epsilon: 0.1
+  focal_gamma: 2.0
+  focal_alpha: null
+  num_workers: 4
+
+tuning:
+  enabled: true
+  epochs: 3
+  n_trials: 5
+  objective_loss: label_smoothing
+  metric: accuracy
+  direction: maximize
+  search_space:
+    learning_rate: [3.0e-5, 5.0e-5, 1.0e-4]
+    batch_size: [16, 32]
+    max_length: [256, 512, 1024]
+    weight_decay:
+      low: 0.0
+      high: 0.1
+    drop_path_rate: [0.0, 0.1, 0.2]
+    label_smoothing_epsilon: [0.0, 0.1, 0.2]
+
+calibration:
+  enabled: true
+  max_iter: 200
+  lr: 0.05
+
+selective_prediction:
+  confidence_thresholds: [0.50, 0.60, 0.70, 0.80, 0.90, 0.95]
+  coverage_levels: [1.00, 0.95, 0.90, 0.80, 0.70, 0.60, 0.50]
+
+evaluation:
+  ece_bins: 15
+  high_confidence_threshold: 0.90
+
+classifier_inference:
+  model_name: modernbert
+  loss_key: focal
+  checkpoint_path: models
+  temperature_path: models/temperature.json
+  confidence_threshold: 0.90
+  use_safetensors: true
+
+ner_inference:
+  model_name: fastino/gliner2-base-v1
+  cache_dir: cache/gliner2
+  threshold: 0.50
+
+reasoner_inference:
+  model_name: meta-llama/Llama-3.2-1B-Instruct
+  cache_dir: cache/llama
+  torch_dtype: auto
+  device_map: auto
+  trust_remote_code: false
+  low_cpu_mem_usage: true
+  generation:
+    max_new_tokens: 12288
+    do_sample: true
+    temperature: 0.70
+    top_p: 0.90
+    repetition_penalty: 1.10
+
+ocr_inference:
+  model_name: deepseek-ai/DeepSeek-OCR
+  cache_dir: cache/deepseek-ocr
+  worker_python: .venv-ocr/Scripts/python.exe
+  auto_setup_worker: true
+  prompt: "<image>\nFree OCR. "
+  trust_remote_code: true
+  use_safetensors: true
+  load_in_4bit: true
+  attention_implementation: eager
+  base_size: 1024
+  image_size: 640
+  crop_mode: true
+  max_upload_mb: 10

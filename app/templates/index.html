@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Understand product-review risk through classification, entity extraction, and local AI reasoning.">
+  <title>ReviewTrust — Review analysis, explained</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}">
+  <script type="module" src="{{ url_for('static', path='/js/app.js') }}"></script>
+</head>
+<body class="is-loading">
+  <a class="skip-link" href="#analyzer">Skip to analyzer</a>
+
+  <div class="loader" aria-hidden="true">
+    <div class="wordmark loader-word">REVIEW<span>TRUST</span></div>
+    <div class="loader-line"><i></i></div>
+  </div>
+
+  <header class="site-header" id="site-header">
+    <a class="wordmark" href="#top" aria-label="ReviewTrust home">REVIEW<span>TRUST</span></a>
+    <nav aria-label="Primary navigation">
+      <a href="#top">Pipeline</a>
+      <a href="#analyzer">Analyze</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="intro-page" id="top" aria-labelledby="intro-title">
+      <div class="intro-copy reveal">
+        <p class="overline">Fake product review detection</p>
+        <h1 id="intro-title">Evidence first.<br><em>Explanation</em> last.</h1>
+        <p class="intro-description">ReviewTrust combines three local AI stages to assess a product review. Each stage passes its evidence forward, turning a prediction into a result you can inspect and understand.</p>
+        <a class="start-link" href="#analyzer">Start an analysis <span>↓</span></a>
+      </div>
+
+      <ol class="pipeline-diagram reveal" aria-label="Review analysis pipeline">
+        <li>
+          <div class="pipeline-node"><span>01</span><b>Classify</b></div>
+          <p>A calibrated language model predicts whether the review is deceptive and checks whether its confidence is high enough to accept.</p>
+        </li>
+        <li>
+          <div class="pipeline-node"><span>02</span><b>Extract</b></div>
+          <p>The entity model highlights the exact words and phrases that may contain suspicious claims, incentives, or manipulation.</p>
+        </li>
+        <li>
+          <div class="pipeline-node"><span>03</span><b>Explain</b></div>
+          <p>A local Llama reasoner uses both outputs as private evidence and returns a concise, readable assessment.</p>
+        </li>
+      </ol>
+
+    </section>
+
+    <section class="workspace-page" id="analyzer" aria-labelledby="analyzer-title">
+      <div class="input-pane">
+        <div class="pane-heading reveal">
+          <p class="overline">Input</p>
+          <h2 id="analyzer-title">Analyze a review.</h2>
+          <p>Paste one product review below. The full pipeline runs once and displays each stage beside it.</p>
+        </div>
+
+        <div class="analysis-form reveal">
+          <label for="review-text">Product review</label>
+          <textarea id="review-text" maxlength="{{ max_chars }}" placeholder="Type or paste the review here…" spellcheck="true"></textarea>
+          <div class="form-meta">
+            <button id="clear-text" type="button">Clear</button>
+            <span id="char-count">0 / {{ max_chars }}</span>
+          </div>
+
+          <div id="form-alert" class="form-alert" role="alert" hidden></div>
+
+          <details class="controls">
+            <summary>Fine-tune analysis <span>+</span></summary>
+            <div class="control-grid">
+              <label>
+                <span>Acceptance <output id="classifier-value">0.90</output></span>
+                <input id="classifier-threshold" type="range" min="0.50" max="0.99" step="0.01" value="0.90">
+              </label>
+              <label>
+                <span>Entity detail <output id="ner-value">0.50</output></span>
+                <input id="ner-threshold" type="range" min="0.05" max="0.95" step="0.01" value="0.50">
+              </label>
+              <label>
+                <span>Explanation variation <output id="temperature-value">0.70</output></span>
+                <input id="temperature" type="range" min="0.10" max="1.50" step="0.05" value="0.70">
+              </label>
+            </div>
+            <button id="reset-defaults" class="reset-link" type="button">Restore defaults</button>
+          </details>
+
+          <button class="analyze-button" id="analyze" type="button">
+            <span class="idle-label">Analyze review <i>↗</i></span>
+            <span class="loading-label"><i></i> Running all three stages</span>
+          </button>
+          <p class="shortcut">Ctrl / ⌘ + Enter</p>
+
+          <div class="ocr-divider"><span>or analyze an image</span></div>
+          <div class="ocr-uploader" id="ocr-uploader">
+            <input id="ocr-image" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+            <button class="ocr-picker" id="ocr-picker" type="button">
+              <span class="ocr-preview" id="ocr-preview" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm-4 7 5-5 3 3 2-2 6 6"/></svg>
+              </span>
+              <span><b id="ocr-file-name">Choose a review image</b><small>PNG, JPEG or WebP · up to 10 MB</small></span>
+              <i>+</i>
+            </button>
+            <button class="ocr-analyze" id="ocr-analyze" type="button" disabled>
+              <span>Extract text & analyze</span>
+              <span class="ocr-loading"><i></i> DeepSeek-OCR is reading</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <section class="output-pane" id="result" aria-labelledby="result-title" aria-live="polite">
+        <div class="output-heading">
+          <div><p class="overline">Pipeline output</p><h2 id="result-title">Analysis stages</h2></div>
+          <span class="output-status" id="output-status"><i></i> Ready</span>
+        </div>
+
+        <div class="result-content">
+          <article class="result-stage" id="classification-stage">
+            <header><span>01</span><div><p>Classification</p><h3>Prediction confidence</h3></div><strong id="classification-state">Waiting</strong></header>
+            <div class="stage-body" id="classification-result"><p class="stage-placeholder">The calibrated prediction and acceptance decision will appear here.</p></div>
+          </article>
+
+          <article class="result-stage" id="entity-stage">
+            <header><span>02</span><div><p>Entity extraction</p><h3>Detected evidence</h3></div><strong id="entity-state">Waiting</strong></header>
+            <div class="stage-body" id="entity-result"><p class="stage-placeholder">Predicted words will be highlighted with their confidence.</p></div>
+          </article>
+
+          <article class="result-stage explanation-stage" id="explanation-stage">
+            <header><span>03</span><div><p>Reasoning</p><h3>Why the review received its assessment</h3></div><button id="copy-explanation" type="button" disabled>Copy</button></header>
+            <div class="stage-body explanation" id="reasoner-result"><p class="stage-placeholder">The final human-readable explanation will appear here.</p></div>
+          </article>
+        </div>
+      </section>
+    </section>
+  </main>
+
+</body>
+</html>
