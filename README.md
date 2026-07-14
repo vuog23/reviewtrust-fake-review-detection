@@ -16,19 +16,8 @@ ReviewTrust is a local fake-product-review analysis app. It accepts review text 
 ## Requirements
 
 - Python 3.10+
-- The trained classifier files in `models/`
 - Internet access for the first GLiNER2, Llama, and DeepSeek-OCR download
 - An NVIDIA CUDA GPU for image OCR; text-only analysis can run on CPU
-
-The classifier is not included in Git. Place these files in `models/`:
-
-```text
-config.json
-model.safetensors
-tokenizer.json
-tokenizer_config.json
-temperature.json
-```
 
 ## Run on Windows
 
