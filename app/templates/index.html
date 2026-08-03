@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Understand product-review risk through classification, entity extraction, and local AI reasoning.">
+  <meta name="description" content="Understand product-review risk through classification, entity extraction, and AI reasoning.">
   <title>ReviewTrust — Review analysis, explained</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}">
   <script type="module" src="{{ url_for('static', path='/js/app.js') }}"></script>
@@ -29,7 +29,7 @@
       <div class="intro-copy reveal">
         <p class="overline">Fake product review detection</p>
         <h1 id="intro-title">Evidence first.<br><em>Explanation</em> last.</h1>
-        <p class="intro-description">ReviewTrust combines three local AI stages to assess a product review. Each stage passes its evidence forward, turning a prediction into a result you can inspect and understand.</p>
+        <p class="intro-description">ReviewTrust combines three AI stages to assess a product review. Each stage passes its evidence forward, turning a prediction into a result you can inspect and understand.</p>
         <a class="start-link" href="#analyzer">Start an analysis <span>↓</span></a>
       </div>
 
@@ -44,7 +44,7 @@
         </li>
         <li>
           <div class="pipeline-node"><span>03</span><b>Explain</b></div>
-          <p>A local Llama reasoner uses both outputs as private evidence and returns a concise, readable assessment.</p>
+          <p>A Qwen reasoner uses both outputs as private evidence and returns a concise, readable assessment.</p>
         </li>
       </ol>
 
@@ -105,7 +105,7 @@
             </button>
             <button class="ocr-analyze" id="ocr-analyze" type="button" disabled>
               <span>Extract text & analyze</span>
-              <span class="ocr-loading"><i></i> DeepSeek-OCR is reading</span>
+              <span class="ocr-loading"><i></i> Reading the image</span>
             </button>
           </div>
         </div>

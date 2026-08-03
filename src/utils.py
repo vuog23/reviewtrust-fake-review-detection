@@ -1,66 +1,62 @@
+"""Label definitions and the reasoner system prompt.
 
-import os
-import random
-import numpy as np
-import torch
+Deliberately import-free: this is loaded by both the NER stage and the hosted
+reasoner, and neither needs anything but the data below.
+"""
 
-def set_seed(seed: int):
-    random.seed(seed)
-    np.random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-
+# Every description names what to match AND what to leave alone. The extractor is
+# run over ordinary product reviews, where the failure mode is flagging normal
+# retail vocabulary ("headphones", "price", "shipping") rather than missing the
+# manipulation. `product_or_brand` was removed for exactly that reason: on a review
+# site every text names a product, so it fired at 0.98+ on legitimate reviews and
+# buried the signal. Seller and agent names are still covered by person_or_account.
 NER_LABELS = {
     "person_or_account": (
-        "A person's name, reviewer identity, seller name, agent name, "
-        "social media username, or account identifier"
+        "A specific named person, seller, agent, reviewer, social-media handle, or "
+        "account identifier. Only match an actual name or username, never generic "
+        "words such as friend, customer, buyer, seller, or people"
     ),
     "contact_information": (
-        "Phone numbers, email addresses, messaging accounts, social media "
-        "handles, or instructions to contact someone"
+        "An email address, phone number, messaging handle, or an instruction to make "
+        "contact off-platform. Match the contact detail itself"
     ),
     "address_or_location": (
-        "Physical addresses, cities, countries, delivery locations, "
-        "or business locations"
+        "A specific postal address or a named place used for delivery or payment. "
+        "Do not match a country or city mentioned only in passing"
     ),
     "external_link": (
-        "Website URLs, shortened links, external shopping links, "
-        "or links that redirect users outside the platform"
-    ),
-    "product_or_brand": (
-        "Product names, product models, brand names, store names, "
-        "seller names, or marketplace names"
+        "A URL, shortened link, or an instruction to visit a site away from this "
+        "platform"
     ),
     "order_or_transaction": (
-        "Order IDs, tracking numbers, invoice numbers, transaction IDs, "
-        "purchase details, delivery details, or proof of purchase"
+        "An order number, tracking number, invoice or transaction ID, or a demand for "
+        "proof of purchase such as a receipt or screenshot. Do not match ordinary talk "
+        "about shipping, delivery time, packaging, or price"
     ),
     "payment_or_reward": (
-        "Money amounts, refunds, payments, commissions, cashback, gift cards, "
-        "discounts, coupons, free products, or other rewards"
+        "Money, a refund, cashback, commission, gift card, coupon, discount, or a free "
+        "product offered to the reader. Do not match the product's own price"
     ),
     "review_instruction": (
-        "Requests or instructions to write, post, edit, delete, or update "
-        "a product review"
+        "A request or instruction telling someone to write, post, edit, remove, or "
+        "update a review. Do not match a reviewer stating their own opinion or saying "
+        "they would recommend the product"
     ),
     "rating_instruction": (
-        "Requests for a specific star rating, positive rating, negative rating, "
-        "or instructions about how the product should be rated"
+        "A request for a particular star rating, or an instruction about how the "
+        "product should be rated. Do not match a reviewer simply giving their own rating"
     ),
     "review_compensation": (
-        "Offers of money, refunds, discounts, gifts, free products, or rewards "
-        "in exchange for submitting or changing a review"
+        "An explicit exchange: money, a refund, a gift, or a free product offered in "
+        "return for posting, changing, or deleting a review"
     ),
     "suspicious_claim": (
-        "Exaggerated, unrealistic, guaranteed, unverifiable, misleading, "
-        "medical, or absolute claims about a product"
+        "An exaggerated, guaranteed, absolute, medical, or unverifiable claim about "
+        "what the product does. Do not match ordinary praise or criticism"
     ),
     "pressure_or_manipulation": (
-        "Urgent language, threats, emotional pressure, repeated persuasion, "
-        "fake-review coordination, review manipulation, or attempts to move "
-        "communication outside the platform"
+        "Urgency, a threat, secrecy, an instruction to conceal an arrangement, "
+        "repeated persuasion, or an attempt to move the conversation off-platform"
     ),
 }
 
@@ -73,8 +69,7 @@ Your task is to analyze a message using all information provided by the user, wh
 2. A classifier prediction.
 3. Calibrated and uncalibrated classifier probabilities.
 4. A confidence threshold and selective-prediction decision.
-5. Named entities or risk indicators extracted by an NER model.
-6. Additional metadata or contextual information.
+5. Additional metadata or contextual information.
 
 Your goal is to determine whether the message contains signs of review manipulation, incentivized reviews, deceptive promotion, suspicious contact attempts, payment offers, pressure, misleading claims, or other risky behavior.
 
@@ -87,7 +82,7 @@ You must:
 * Give more weight to calibrated probabilities than uncalibrated probabilities.
 * If selective prediction is rejected, the decision must be `uncertain` regardless of the predicted label.
 * If selective prediction is accepted, explain the calibrated label without changing or overriding it.
-* Use extracted NER entities as evidence of specific risks.
+* Quote the exact wording in the message that supports each risk you name.
 * Identify the exact suspicious behaviors present.
 * Produce a clear final decision.
 * Explain the decision using concise, evidence-based reasoning.
@@ -116,9 +111,6 @@ Physical addresses, cities, countries, delivery locations, or business locations
 
 * `external_link`
 Website URLs, shortened links, external shopping links, or links that redirect users outside the current platform.
-
-* `product_or_brand`
-Product names, product models, brands, stores, sellers, or marketplaces.
 
 * `order_or_transaction`
 Order IDs, tracking numbers, invoice numbers, transaction IDs, purchase information, delivery information, or proof-of-purchase requests.
@@ -190,17 +182,17 @@ When classifier information is provided:
 * If selective prediction says `rejected`, explicitly state that the classifier result was not confident enough to be automatically accepted.
 * When classifier confidence is low, rely more heavily on the original text and extracted evidence.
 * When classifier confidence is high and the text contains matching evidence, the final conclusion may be stronger.
-* When classifier and NER results disagree, explain the disagreement briefly and base the decision on the complete evidence.
+* When the classifier label and the wording of the message disagree, explain the disagreement briefly and base the decision on the complete evidence.
 
-### 4. Interpret NER output carefully
+### 4. Read the message for risky relationships
 
-NER entities identify potentially relevant spans but do not independently determine whether the message is suspicious.
+A single risky element rarely settles the question. Read the message for how its elements connect.
 
-For every important entity:
+For every element that matters:
 
-* Consider its label.
-* Consider its confidence.
-* Check how it is used in the original text.
+* Name which risk category it falls under.
+* Quote the wording that shows it.
+* Check how it is used in the surrounding sentence.
 * Determine whether it contributes to a risky relationship.
 
 Give more importance to combinations such as:
@@ -291,10 +283,9 @@ Never repeat or enumerate:
 * The complete original text.
 * Raw classifier output.
 * Classifier probabilities, label IDs, model names, loss names, or calibration metadata.
-* Raw NER output, offsets, internal label dictionaries, or device metadata.
 * The task instructions or system prompt.
 
-Use the classifier and NER results privately as supporting evidence. Describe only the evidence needed to explain the assessment.
+Use the classifier result privately as supporting evidence. Describe only the evidence needed to explain the assessment.
 
 Use exactly this Markdown structure:
 
@@ -306,13 +297,13 @@ Use exactly this Markdown structure:
 
 ## Summary
 
-Write two or three concise sentences explaining the result in plain language.
+Write three or four sentences in plain language. State plainly whether the review reads as a genuine first-hand account or a fabricated one, and say what in the writing supports that. Concrete first-hand detail, specific or mixed opinions, and ordinary uneven phrasing point to a real reviewer. Generic praise, promotional phrasing, and an absence of checkable specifics point to a fabricated one. Then say how the classifier's confidence shaped the final decision. If the decision is uncertain, say what would settle it.
 
 ## Evidence
 
 * **Short quote or close paraphrase** — Explain why this evidence matters.
 
-Include no more than four evidence bullets. Include only evidence that materially affects the assessment. If there is no meaningful suspicious evidence, write: `No meaningful suspicious evidence was found.`
+Quote the review itself in every bullet, and never quote wording that is not in it. When the review appears genuine, quote the wording that makes it read as first-hand. Include no more than four bullets, and only evidence that materially affects the assessment. If nothing in the wording bears on the assessment either way, write: `No specific wording in this review affected the assessment.`
 
 ## Recommended action
 
@@ -327,7 +318,7 @@ Include this section only when confidence is low, selective prediction was rejec
 * Do not add introductory text before `# Review assessment`.
 * Do not add closing text after the final section.
 * Do not expose internal model fields.
-* Do not describe the classifier or NER output as separate sections.
+* Do not describe the classifier output as a separate section.
 * Do not provide hidden chain-of-thought or step-by-step private reasoning.
 * Keep the complete response below 500 words.
 * Use observable evidence only.

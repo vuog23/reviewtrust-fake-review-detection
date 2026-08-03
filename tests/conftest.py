@@ -35,30 +35,47 @@ class FakeReasoner:
         self.last_prompt = None
         self.used_temperature = None
 
-    def inference(self, prompt):
+    def inference(self, prompt, temperature=None):
         self.last_prompt = json.loads(prompt)
-        self.used_temperature = self.temperature
+        self.used_temperature = self.temperature if temperature is None else temperature
         return "## Evidence summary\n\nA **gift card** was detected. <script>alert(1)</script>"
 
 
 class FakeOCR:
-    model_name = "deepseek-ai/DeepSeek-OCR"
+    model_name = "qwen/qwen3.6-27b"
     max_upload_bytes = 10 * 1024 * 1024
+    is_configured = True
 
     def __init__(self):
         self.calls = 0
-        self.unload_calls = 0
-        self.setup_calls = 0
+        self.received = []
 
-    def ensure_worker_environment(self):
-        self.setup_calls += 1
-
-    def extract_text(self, _):
+    def extract_text(self, image_bytes, content_type="image/png"):
         self.calls += 1
+        self.received.append((len(image_bytes), content_type))
         return "The seller offered a gift card for a five star review."
 
-    def unload(self):
-        self.unload_calls += 1
+
+class FakeGroqSDK:
+    """Stands in for groq.Groq: records every request and replays queued replies.
+
+    Keeps the whole suite offline -- no API key, no network, no billing.
+    """
+
+    def __init__(self, replies=None):
+        self.requests = []
+        self._replies = list(replies or [])
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    def _create(self, **request):
+        self.requests.append(request)
+        reply = self._replies.pop(0) if self._replies else "ok"
+        if isinstance(reply, Exception):
+            raise reply
+        content, finish_reason = reply if isinstance(reply, tuple) else (reply, "stop")
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content), finish_reason=finish_reason)]
+        )
 
 
 def fake_classifier(*, text, confidence_threshold, **_):

@@ -55,8 +55,16 @@ class MarkdownService:
         classifier_output: dict[str, Any] | None = None,
         ner_output: dict[str, Any] | None = None,
     ) -> str:
-        """Create a concise user-facing explanation without exposing model dumps."""
+        """Create a concise user-facing explanation without exposing model dumps.
+
+        The hosted model reliably returns the Markdown layout the system prompt asks
+        for, so that layout is preserved as written. Everything below this fast path
+        is salvage for a reply that did not follow it.
+        """
         raw_response = unescape(raw_response or "")
+        if _follows_contract(raw_response):
+            return _render_contract(raw_response, original_text, classifier_output)
+
         payload = _extract_json_object(raw_response)
         if payload is None:
             payload = _extract_partial_payload(raw_response)
@@ -174,6 +182,150 @@ class MarkdownService:
         return "\n".join(lines).strip()
 
 
+_HEADING = re.compile(r"^#{1,6}\s+(.*\S)\s*$")
+_METADATA_LINE = re.compile(
+    r"^\*\*(decision|risk level|confidence)\s*:?\*\*\s*(.*)$", re.IGNORECASE
+)
+_EVIDENCE_BULLET = re.compile(r"^\s*[-*]\s+\*\*(.+?)\*\*\s*[-–—:]\s*(.+)$")
+_QUOTED_SPAN = re.compile(r"[\"“]([^\"”]{3,})[\"”]")
+
+
+def _follows_contract(markdown_text: str) -> bool:
+    """Did the model return the layout the system prompt asked for?"""
+    sections = _split_sections(markdown_text)
+    has_header = "review assessment" in sections or any(
+        _METADATA_LINE.match(line.strip()) for line in markdown_text.splitlines()
+    )
+    return has_header and "summary" in sections
+
+
+def _split_sections(markdown_text: str) -> dict[str, str]:
+    sections: dict[str, str] = {}
+    current: str | None = None
+    body: list[str] = []
+    for line in (markdown_text or "").splitlines():
+        heading = _HEADING.match(line)
+        if heading:
+            if current is not None:
+                sections[current] = "\n".join(body).strip()
+            current = heading.group(1).strip().lower()
+            body = []
+        else:
+            body.append(line)
+    if current is not None:
+        sections[current] = "\n".join(body).strip()
+    return sections
+
+
+def _metadata_values(block: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in block.splitlines():
+        match = _METADATA_LINE.match(line.strip())
+        if match:
+            values[match.group(1).lower()] = match.group(2).strip().rstrip("*").strip()
+    return values
+
+
+def _render_contract(
+    markdown_text: str,
+    original_text: str,
+    classifier_output: dict[str, Any] | None,
+) -> str:
+    """Present the model's own sections, with the classifier holding the verdict.
+
+    Only three things are enforced: the calibrated classifier owns the decision, the
+    confidence shown is the calibrated one rather than the model's self-estimate, and
+    quoted evidence has to appear in the review. The prose is otherwise the model's.
+    """
+    sections = _split_sections(markdown_text)
+    metadata = _metadata_values(sections.get("review assessment", ""))
+
+    decision = _authoritative_decision(classifier_output) or metadata.get("decision", "assessment")
+    accepted = decision != "uncertain"
+    lines = [f"## {decision.replace('_', ' ').strip().title()}"]
+
+    details: list[str] = []
+    risk_level = metadata.get("risk level", "").strip()
+    if risk_level and risk_level.lower() not in {"none", "n/a", "-"}:
+        details.append(f"Risk level: {risk_level.replace('_', ' ').title()}")
+    calibrated_confidence = (classifier_output or {}).get("calibrated", {}).get("confidence")
+    if isinstance(calibrated_confidence, (int, float)):
+        details.append(f"Classifier confidence: {float(calibrated_confidence) * 100:.1f}%")
+    if details:
+        lines.append(f"**{' · '.join(details)}**")
+
+    if not accepted:
+        label = str((classifier_output or {}).get("calibrated", {}).get("label", "prediction"))
+        lines.extend([
+            "",
+            f"The classifier leaned toward **{label.replace('_', ' ')}**, but did not meet the "
+            "selected acceptance threshold, so this review is treated as uncertain and should be "
+            "checked by a person rather than automatically enforced.",
+        ])
+
+    summary = sections.get("summary", "").strip()
+    if summary:
+        lines.extend(["", "### Summary", "", summary])
+
+    bullets, dropped = _grounded_evidence_bullets(sections.get("evidence", ""), original_text)
+    lines.extend(["", "### Evidence", ""])
+    if bullets:
+        lines.extend(bullets)
+    elif dropped:
+        lines.append(
+            "The explanation quoted wording that does not appear in this review, so it was "
+            "withheld. Read the highlighted review above instead."
+        )
+    else:
+        lines.append("No specific suspicious wording was identified in this review.")
+
+    action = sections.get("recommended action", "").strip()
+    if not accepted:
+        action = "Review the text manually and avoid automatic enforcement."
+    if action:
+        lines.extend(["", "### Recommended action", "", action])
+
+    uncertainty = sections.get("uncertainty", "").strip()
+    if uncertainty and accepted:
+        lines.extend(["", "### Keep in mind", "", uncertainty])
+
+    return "\n".join(lines).strip()
+
+
+def _grounded_evidence_bullets(
+    evidence_block: str,
+    original_text: str,
+) -> tuple[list[str], int]:
+    """Keep evidence whose quotation really occurs in the review."""
+    kept: list[str] = []
+    dropped = 0
+    for line in evidence_block.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        match = _EVIDENCE_BULLET.match(stripped)
+        if match:
+            quote = _strip_quote_marks(match.group(1))
+            if _is_source_evidence(quote, original_text):
+                kept.append(f"- **{quote}** — {match.group(2).strip()}")
+            else:
+                dropped += 1
+            continue
+        if not stripped.startswith(("- ", "* ")):
+            continue
+        # The model does not always bold its quote. Ground whatever it put in
+        # quotation marks rather than letting the bullet through unchecked.
+        body = stripped[2:].strip()
+        quoted = _QUOTED_SPAN.search(body)
+        if quoted and not _is_source_evidence(quoted.group(1), original_text):
+            dropped += 1
+            continue
+        if quoted:
+            body = body.replace(quoted.group(0), f"**{_strip_quote_marks(quoted.group(1))}**", 1)
+        kept.append(f"- {body}")
+    return kept[:4], dropped
+
+
 def _extract_json_object(raw_response: str) -> dict[str, Any] | None:
     """Parse a JSON object even when a small model adds text before or after it."""
     if not isinstance(raw_response, str):
@@ -213,7 +365,7 @@ def _format_markdown_with_authority(
 
     grounded_bullets: list[str] = []
     for line in markdown_text.splitlines():
-        match = re.match(r"^\s*[-*]\s+\*\*(.+?)\*\*\s*[-–—:]\s*(.+)$", line)
+        match = _EVIDENCE_BULLET.match(line)
         if match and _is_source_evidence(match.group(1), original_text):
             grounded_bullets.append(f"- **{match.group(1)}** - {match.group(2)}")
 
@@ -255,7 +407,7 @@ def _format_markdown_with_authority(
             filtered.extend(["", "### Evidence"])
             continue
         if in_evidence and stripped.startswith(("- ", "* ")):
-            match = re.match(r"^[-*]\s+\*\*(.+?)\*\*\s*[-–—:]\s*(.+)$", stripped)
+            match = _EVIDENCE_BULLET.match(stripped)
             if match and _is_source_evidence(match.group(1), original_text):
                 filtered.append(f"- **{match.group(1)}** - {match.group(2)}")
             continue
@@ -283,7 +435,7 @@ def _grounded_ner_bullets(
     ner_output: dict[str, Any] | None,
     original_text: str,
 ) -> list[str]:
-    """Turn exact NER spans into cautious evidence when Llama output is unusable."""
+    """Turn exact NER spans into cautious evidence when the reasoner output is unusable."""
     if not ner_output:
         return []
     priority = {label: index for index, label in enumerate(_NER_SIGNAL_PRIORITY)}
@@ -314,14 +466,40 @@ def _grounded_ner_bullets(
     ]
 
 
+_QUOTE_MARKS = "\"'`*“”‘’ \t"
+
+
+def _strip_quote_marks(value: str) -> str:
+    """Drop the quotation marks the system prompt asks the model to add.
+
+    Evidence is requested as a "short quote", so the model wraps it in quotes. Left
+    in place they made every bullet fail the grounding check below, which emptied the
+    Evidence section for well-formed replies.
+    """
+    return (value or "").strip().strip(_QUOTE_MARKS).strip()
+
+
 def _is_source_evidence(evidence_text: str, original_text: str) -> bool:
     def normalize(value: str) -> str:
         value = value.casefold().replace("’", "'").replace("“", '"').replace("”", '"')
-        return " ".join(value.strip().strip(":-–— ").split())
+        value = value.replace("‘", "'").strip().strip(_QUOTE_MARKS)
+        return " ".join(value.strip(":-–— ").split())
 
     evidence = normalize(evidence_text)
     source = normalize(original_text)
-    return len(evidence) >= 3 and evidence in source
+    if len(evidence) < 3:
+        return False
+    if evidence in source:
+        return True
+
+    # The system prompt also permits a close paraphrase, and quoting across a line
+    # break or an ellipsis is common, so accept a quote whose content words are
+    # nearly all present in the review.
+    words = [word for word in re.findall(r"\w+", evidence) if len(word) > 2]
+    if len(words) < 3:
+        return False
+    present = sum(1 for word in words if word in source)
+    return present / len(words) >= 0.8
 
 
 def _extract_partial_payload(raw_response: str) -> dict[str, Any] | None:

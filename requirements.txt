@@ -1,31 +1,26 @@
+# numpy arrives transitively with torch; pinned because 2.x is not safe for every
+# torch build this project has been run against.
 numpy==1.26.4
-optuna>=4.0,<5.0
 PyYAML>=6.0
 safetensors>=0.4
-soundfile>=0.14,<1.0
-scikit-learn>=1.4
 torch>=2.2
 transformers==5.12.1
 tokenizers==0.22.2
 gliner2>=1.2,<2.0
 fastapi>=0.115,<1.0
+# Arrives with FastAPI, but app/schemas.py imports it directly, so it is declared.
+pydantic>=2.9,<3.0
 uvicorn[standard]>=0.32,<1.0
 jinja2>=3.1,<4.0
-aiofiles>=24.1,<25.0
-addict>=2.4,<3.0
-bitsandbytes>=0.46,<1.0
-easydict>=1.13,<2.0
-einops>=0.8,<1.0
 markdown-it-py>=3.0,<5.0
 bleach>=6.2,<7.0
 httpx>=0.27,<1.0
+# brotlicffi 1.2.0.0 breaks httpx streaming decode ("can_accept_more_data" errors),
+# which makes every huggingface_hub model download fail.
+brotlicffi!=1.2.0.0
 huggingface-hub==1.22.0
 pillow>=10.4,<13.0
 python-multipart>=0.0.20,<1.0
+# Hosted explanation and image transcription (qwen/qwen3.6-27b on Groq Cloud).
+groq>=1.6,<2.0
 pytest>=8.3,<10.0
-
-# OCR worker requirements. These comments are parsed by scripts/setup_ocr_env.py
-# and installed only inside .venv-ocr so they do not replace the main versions.
-# ocr-worker:transformers==4.46.3
-# ocr-worker:tokenizers==0.20.3
-# ocr-worker:huggingface-hub==0.36.2

@@ -94,7 +94,7 @@ async function analyzeImage() {
   els.ocrButton.setAttribute('aria-busy', 'true');
   els.analyze.disabled = true;
   els.outputStatus.classList.add('running');
-  els.outputStatus.innerHTML = '<i></i> OCR / Running';
+  els.outputStatus.innerHTML = '<i></i> Reading image';
   ['classification', 'entity', 'explanation'].forEach(stage => $(`#${stage}-stage`).classList.add('running'));
 
   const form = new FormData();
@@ -112,7 +112,7 @@ async function analyzeImage() {
     renderResult(payload);
   } catch (error) {
     showAlert(error.message || 'The image could not be analyzed.');
-    els.outputStatus.innerHTML = '<i></i> OCR error';
+    els.outputStatus.innerHTML = '<i></i> Image error';
   } finally {
     els.ocrButton.disabled = !selectedImage;
     els.ocrButton.removeAttribute('aria-busy');
@@ -199,7 +199,7 @@ async function copyExplanation() {
   try {
     await navigator.clipboard.writeText(explanationText);
     els.copy.textContent = 'Copied';
-    setTimeout(() => { els.copy.textContent = 'Copy explanation'; }, 1400);
+    setTimeout(() => { els.copy.textContent = 'Copy'; }, 1400);
   } catch { showAlert('Clipboard access is unavailable.'); }
 }
 
