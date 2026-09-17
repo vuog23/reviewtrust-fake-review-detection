@@ -2,19 +2,14 @@ output_dir: models
 cache_dir: cache
 
 data:
-  # Longest review the API accepts, and the ceiling on OCR-extracted text.
   max_chars: 12000
 
-# Backbone settings for the trained classifier. Only the entry named by
-# classifier_inference.model_name is read, and only max_length is used at
-# inference time.
 models:
   modernbert:
     model_name: answerdotai/ModernBERT-base
     max_length: 1024
 
 evaluation:
-  # Fallback acceptance threshold when classifier_inference omits its own.
   high_confidence_threshold: 0.90
 
 classifier_inference:
@@ -28,46 +23,36 @@ classifier_inference:
 ner_inference:
   model_name: fastino/gliner2-base-v1
   cache_dir: cache/gliner2
-  # Neutral position of the UI "Entity detail" slider. Moving the slider shifts
-  # every label_threshold below by the same amount, so the tuning is preserved.
+
   threshold: 0.50
-  # Ask the model for nearly everything, then filter here. One global cut cannot
-  # serve labels with very different noise profiles: measured on ordinary reviews,
-  # order_or_transaction fires on "price"/"Shipping" around 0.65 while
-  # review_instruction only reaches ~0.23 on a genuine instruction to post a review.
+
   model_floor: 0.05
   min_span_chars: 3
   label_thresholds:
-    # Clean signals - no false hits observed on legitimate reviews, so keep these low.
+
     review_compensation: 0.30
     payment_or_reward: 0.35
     contact_information: 0.30
     external_link: 0.30
     address_or_location: 0.45
     suspicious_claim: 0.40
-    # Genuine instructions score low; legitimate reviews score lower still.
+
     review_instruction: 0.15
     pressure_or_manipulation: 0.15
     rating_instruction: 0.30
-    # Noisy on ordinary retail vocabulary - require real confidence.
+
     order_or_transaction: 0.70
     person_or_account: 0.80
 
-# The explanation and image-transcription stages both run on one hosted
-# multimodal model. Only the classifier and NER models still run locally.
-# qwen/qwen3.6-27b is a Groq preview model: check console.groq.com/docs/models
-# if requests start returning 404.
 reasoner_inference:
   provider: groq
   model_name: qwen/qwen3.6-27b
-  # Name of the environment variable holding the key - never the key itself.
-  # config.yaml is tracked by git; put the real key in .env, which is not.
+
   api_key_env: GROQ_API_KEY
   base_url: null
   timeout_seconds: 120
   max_retries: 3
-  # Qwen3.6 writes its chain of thought inline in the reply unless thinking is
-  # switched off, and the system prompt forbids showing it to end users.
+
   reasoning_effort: none
   reasoning_format: hidden
   max_input_chars: 48000
@@ -79,8 +64,7 @@ reasoner_inference:
 ocr_inference:
   provider: groq
   model_name: qwen/qwen3.6-27b
-  # Name of the environment variable holding the key - never the key itself.
-  # config.yaml is tracked by git; put the real key in .env, which is not.
+
   api_key_env: GROQ_API_KEY
   base_url: null
   timeout_seconds: 120
@@ -90,11 +74,10 @@ ocr_inference:
   temperature: 0.0
   max_completion_tokens: 4096
   max_upload_mb: 10
-  # Uploads are downscaled and re-encoded before sending; base64 inflates a
-  # payload by about a third, so a raw 10 MB image would be needlessly large.
+
   max_image_edge: 2000
   max_encoded_mb: 3
-  # Guards against a small file that decodes to an enormous bitmap.
+
   max_image_pixels: 40000000
   prompt: >-
     Transcribe every piece of text visible in this image, exactly as written.
